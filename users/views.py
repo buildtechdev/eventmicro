@@ -1,3 +1,5 @@
+import traceback
+
 from datetime import datetime
 
 from django.http import HttpResponse, JsonResponse
@@ -111,54 +113,62 @@ def reminder(request, __id__=0):
         participant = datarow['participant']
         courses = participant.interested_in
 
-        # Get session invitation link for the course
-        course_invites = []
-        invites = CourseEvent.objects.filter(event=event).all()
-        for invite in invites:
-            invitation = {}
-            invitation['name'] = invite.course.name
-            invitation['link'] = invite.invitation
-            if str(invite.course.id) in courses:
-                invitation['is_selected'] = True
-            course_invites.append(invitation)
+        try:
+
+            # Get session invitation link for the course
+            course_invites = []
+            invites = CourseEvent.objects.filter(event=event).all()
+            for invite in invites:
+                invitation = {}
+                invitation['name'] = invite.course.name
+                invitation['link'] = invite.invitation
+                if str(invite.course.id) in courses:
+                    invitation['is_selected'] = True
+                course_invites.append(invitation)
+            
+            session_type = "Diplomas"
+            if event.school.extra == 1:
+                session_type = "Specialization"
+
+            if len(course_invites) == 0:
+                course_invites = None
+
+            # Prepare email invite reminder
+            invite = {
+                    'date': event.date,
+                    'school': event.school,
+                    's_time': event.start_time,
+                    'e_time': event.end_time,
+                    'calendar': event.calendar_time(),
+                    'name': str(participant.first_name + ' ' + participant.last_name),
+                    'subject': event.invitation,
+                    'tagline': event.name,
+                    'details': event.details,
+                    'photo': event.photo,
+                    'email' : participant.email,
+                    'session_type': session_type,
+                    'link1': event.link1,
+                    'link2': event.link2,
+                    'link3': event.link3,
+                    'course_invites': course_invites
+                    }
+            
+            # Send email reminder
+            if participant.reminder_on == today:
+                print('Skipping already reminded today --> ' + participant.email)
+                continue
+
+            send_email_reminder(invite)
+
+            # Update last reminder date in participant model
+            print('Just reminded today --> ' + participant.email)
+            Participant.objects.filter(id = participant.id).update(reminder_on = today)
         
-        session_type = "Diplomas"
-        if event.school.extra == 1:
-            session_type = "Specialization"
-
-        if len(course_invites) == 0:
-            course_invites = None
-
-        # Prepare email invite reminder
-        invite = {
-                  'date': event.date,
-                  'school': event.school,
-                  's_time': event.start_time,
-                  'e_time': event.end_time,
-                  'calendar': event.calendar_time(),
-                  'name': str(participant.first_name + ' ' + participant.last_name),
-                  'subject': event.invitation,
-                  'tagline': event.name,
-                  'details': event.details,
-                  'photo': event.photo,
-                  'email' : participant.email,
-                  'session_type': session_type,
-                  'link1': event.link1,
-                  'link2': event.link2,
-                  'link3': event.link3,
-                  'course_invites': course_invites
-                }
-        
-        # Send email reminder
-        if participant.reminder_on == today:
-            print('Skipping already reminded today --> ' + participant.email)
-            continue
-
-        send_email_reminder(invite)
-
-        # Update last reminder date in participant model
-        print('Just reminded today --> ' + participant.email)
-        Participant.objects.filter(id = participant.id).update(reminder_on = today)
+        except Exception:
+            print('EXCEPTION >>> ****Mail sending failed for (' + participant.email + ')')
+            print('EXCEPTION >>> STACKTRACE START --------------------------------------------------')
+            traceback.print_exc()
+            print('EXCEPTION >>> STACKTRACE END   --------------------------------------------------')
 
     count = len(datatable)
     responseData = {
